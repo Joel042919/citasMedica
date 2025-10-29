@@ -212,7 +212,7 @@ export default function LoginPage() {
                 Correo Electrónico
               </label>
               <motion.div 
-                className="relative mt-1 rounded-md shadow-sm"
+                className="relative mt-1 rounded-md shadow-sm text-zinc-900"
                 whileHover={inputHover}
                 whileFocus={inputFocus}
               >
@@ -220,6 +220,7 @@ export default function LoginPage() {
                   <FiMail className="h-5 w-5 text-zinc-900" />
                 </div>
                 <input
+                  style={{ color: 'black', paddingLeft: '40px' }}
                   id="email"
                   name="email"
                   type="email"
@@ -257,6 +258,7 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
+                  style={{ color: 'black', paddingLeft: '40px' }}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="focus:ring-2 focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg transition-all duration-200 text-zinc-900"
