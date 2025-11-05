@@ -1,13 +1,12 @@
 'use client'
 
-import { Session } from "@supabase/supabase-js";
-import { createContext, ReactNode, use, useContext, useEffect, useState } from "react";
+
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { getUserRole } from "@/auth/login";
 
 
 interface AuthContextType{
-    session: Session | null;
+    user: any | null;
     role: string | null;
     loading: boolean;
 }
@@ -16,45 +15,38 @@ interface AuthContextType{
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({children}: {children: ReactNode}){
-    const [session, setSession] = useState<Session | null>(null);
+    const [user, setUser] = useState<any>(null);
     const [role, setRole] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
 
     useEffect(()=>{
-        const fetchSessionAndRole = async ()=>{
-            const { data: { session } } = await supabase.auth.getSession();
+        setLoading(true);
+        const {data: authListener} = supabase.auth.onAuthStateChange(
+            async (event, session) =>{
+                if(session?.user){
+                    const {data:profile, error} = await supabase.from('perfiles').select('rol').eq('id',session.user.id).single();
 
-            setSession(session);
+                    if(error){
+                        console.error("Error al obtener el perfil", error.message);
+                    }
 
-            if(session){
-                const userRole = await getUserRole(session.user.id);
-                setRole(userRole);
+                    setUser(session.user);
+                    setRole(profile?.rol || null);  
+                }else{
+                    setUser(null);
+                    setRole(null);
+                }
+                setLoading(false);
             }
-
-            setLoading(false);
-        }
-        fetchSessionAndRole();
-
-        const {data: authListener} = supabase.auth.onAuthStateChange(async (event, session)=>{
-            setLoading(true);
-            setSession(session);
-
-            let userRole : string | null = null;
-            if(session){
-                userRole = await getUserRole(session.user.id);
-            }
-
-            setRole(userRole);
-            setLoading(false);
-        })
+        )
 
         return ()=>{
-            authListener.subscription.unsubscribe();
+            authListener?.subscription.unsubscribe();
         }
     },[])
 
     const value = {
-        session,
+        user,
         role,
         loading,
     }
