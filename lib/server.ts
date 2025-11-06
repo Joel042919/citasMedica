@@ -1,4 +1,4 @@
-import { CookieOptions, createServerClient } from "@supabase/ssr"
+/*import { CookieOptions, createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 
 export const createClient = async () =>{
@@ -31,3 +31,4 @@ export const createClient = async () =>{
     )
 }
 
+*/
