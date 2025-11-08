@@ -16,7 +16,18 @@ import {
 } from 'lucide-react';
 import { useState } from "react";
 
-const Navbar = () => {
+interface NavLink {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+}
+
+interface NavbarProps {
+  navLinks: NavLink[];
+  principal: string;
+}
+
+const Navbar = ({ navLinks, principal }: NavbarProps) => {
   const { user, role, loading } = useAuth();
   
   // Estado para controlar el menú responsive en móvil
@@ -24,14 +35,6 @@ const Navbar = () => {
   
   // Estado para controlar el menú desplegable del usuario
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-
-  // Lista de enlaces de navegación para mapearlos fácilmente
-  const navLinks = [
-    { name: 'Pacientes', href: '/admin/pacientes', icon: Users },
-    { name: 'Médicos', href: '/admin/medicos', icon: Stethoscope },
-    { name: 'Citas Médicas', href: '/admin/citas', icon: Calendar },
-    { name: 'Reportes', href: '/admin/reportes', icon: FileText },
-  ];
 
   /**
    * Componente interno para renderizar la sección del usuario.
@@ -101,7 +104,7 @@ const Navbar = () => {
         {/* Logo y Nombre en Móvil */}
         <div className="flex items-center gap-2">
           <Hospital className="w-8 h-8" />
-          <span className="text-xl font-bold">Aquí Te Curas</span>
+          <a href={principal} className="text-xl font-bold">Aquí Te Curas</a>
         </div>
         
         {/* Botón de Hamburguesa */}
@@ -150,7 +153,7 @@ const Navbar = () => {
         {/* --- Logo (Visible solo en Escritorio) --- */}
         <div className="hidden md:flex items-center gap-3 mb-8">
           <Hospital className="w-10 h-10" />
-          <span className="text-2xl font-bold">Aquí Te Curas</span>
+          <a href="/admin" className="text-2xl font-bold">Aquí Te Curas</a>
         </div>
 
         {/* --- Enlaces de Navegación --- */}

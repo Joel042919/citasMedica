@@ -8,6 +8,13 @@ import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
 import Navbar from "../components/Navbar";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import {
+  Users,        // Icono para Pacientes
+  Stethoscope,  // Icono para Médicos
+  Calendar,     // Icono para Citas
+  FileText,     // Icono para Reportes
+} from 'lucide-react';
+
 
 interface CitasPorEspecialidadDia{
     especialidad: string;
@@ -39,6 +46,13 @@ const getToday = ()=>{
 const getCurrentYear = () => new Date().getFullYear();
 
 const PIE_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+const navLinks = [
+    { name: 'Usuarios', href: '/admin/usuarios', icon: Users },
+    { name: 'Médicos', href: '/admin/medicos', icon: Stethoscope },
+    { name: 'Citas Médicas', href: '/admin/citas', icon: Calendar },
+    { name: 'Reportes', href: '/admin/reportes', icon: FileText },
+];
 
 
 const AdminDashboard = () => {
@@ -157,7 +171,7 @@ const AdminDashboard = () => {
   return (
     <>
         <div className="relative flex flex-col md:flex-row flex-4">
-            <Navbar/>
+            <Navbar navLinks={navLinks} principal="/admin"/>
         <div className="p-8 space-y-8 flex-2">
                 
             <h1 className="text-3xl font-bold mb-6">Dashboard Admin</h1>
