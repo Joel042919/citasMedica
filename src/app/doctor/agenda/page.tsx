@@ -1,36 +1,30 @@
 "use client";
-import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from "../../../../lib/supabaseClient"; // Ajusta tu ruta
-import { useAuth } from "../../../context/AuthContext"; // Ajusta tu ruta
-// Asumiré que tienes un Navbar en esta ruta
+
+import { supabase } from "../../../../lib/supabaseClient";
+import { useAuth } from "../../../context/AuthContext";
 import Navbar from "../../components/Navbar"; 
 
+
+import React, { useState, useEffect, useMemo, memo } from 'react';
 import {
-  Users,
-  Stethoscope,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  AlertCircle,
-  Clock,
-  Video,
-  User,
+  Users, Stethoscope, Calendar, ChevronLeft, ChevronRight,
+  Loader2, AlertCircle, Clock, Video, User,
 } from 'lucide-react';
+
 
 // --- Tipos de Datos ---
 interface Cita {
   idCita: number;
-  fecha: string;
-  horaInicio: string;
-  horaFin: string;
-  linkCita?: string;
+  fecha: string; // "YYYY-MM-DD"
+  horaInicio: string; // "HH:mm:ss"
+  horaFin: string; // "HH:mm:ss"
+  linkCita?: string | null;
   pacienteNombre: string;
   pacienteApellido: string;
 }
 
 interface Horario {
-  diaSemana: string; // "Lunes", "Martes", etc.
+  diaSemana: string;
   horaInicio: string;
   horaFin: string;
 }
@@ -45,21 +39,25 @@ const DIAS_SEMANA_MAP: { [key: string]: number } = {
   'domingo': 0, 'lunes': 1, 'martes': 2, 'miércoles': 3,
   'jueves': 4, 'viernes': 5, 'sábado': 6
 };
-const HORA_INICIO_CALENDARIO = 7; // 7 AM
-const HORA_FIN_CALENDARIO = 20; // 8 PM (20:00)
-const ALTURA_HORA_PX = 60; // 60px por hora
+const HORA_INICIO_CALENDARIO = 7;
+const HORA_FIN_CALENDARIO = 20;
+const ALTURA_HORA_PX = 60;
+const HORAS_CALENDARIO = Array.from(
+  { length: HORA_FIN_CALENDARIO - HORA_INICIO_CALENDARIO },
+  (_, i) => i + HORA_INICIO_CALENDARIO
+);
 
-// --- Funciones de Ayuda de Fechas ---
-
-/** Obtiene el primer día (Lunes) de la semana de una fecha dada */
+// --- Funciones de Ayuda de Fechas (Optimizadas) ---
+// (Estas funciones son rápidas y no necesitan cambios)
 const getInicioSemana = (date: Date): Date => {
   const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Ajuste para que Lunes sea el primer día
-  return new Date(d.setDate(diff));
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return d;
 };
 
-/** Genera los 7 días de la semana a partir del Lunes */
 const getDiasDeLaSemana = (inicioSemana: Date): Date[] => {
   return Array.from({ length: 7 }).map((_, i) => {
     const d = new Date(inicioSemana);
@@ -68,40 +66,122 @@ const getDiasDeLaSemana = (inicioSemana: Date): Date[] => {
   });
 };
 
-/** Formatea una fecha como "VIE 7" */
 const formatCabeceraDia = (date: Date): { dia: string, num: number } => {
   const dia = date.toLocaleDateString('es-ES', { weekday: 'short' }).toUpperCase().replace('.', '');
   const num = date.getDate();
   return { dia, num };
 };
 
-/** Comprueba si dos fechas son el mismo día */
 const isMismoDia = (d1: Date, d2: Date): boolean => {
-  return d1.getFullYear() === d2.getFullYear() &&
+  return d1.getDate() === d2.getDate() &&
          d1.getMonth() === d2.getMonth() &&
-         d1.getDate() === d2.getDate();
+         d1.getFullYear() === d2.getFullYear();
 };
 
-/** Convierte una hora "HH:mm:ss" a minutos desde la medianoche */
 const horaAMinutos = (timeStr: string): number => {
-  const [hours, minutes] = timeStr.split(':').map(Number);
+  const [hours = 0, minutes = 0] = timeStr.split(':').map(Number);
   return hours * 60 + minutes;
 };
 
+/** Calcula el 'top' y 'height' de un bloque (movida fuera del componente) */
+const calcularPosicionBloque = (inicio: string, fin: string) => {
+  const minutosInicio = horaAMinutos(inicio);
+  const minutosFin = horaAMinutos(fin);
+  const minutosOffsetCalendario = HORA_INICIO_CALENDARIO * 60;
+
+  const top = ((minutosInicio - minutosOffsetCalendario) / 60) * ALTURA_HORA_PX;
+  const height = ((minutosFin - minutosInicio) / 60) * ALTURA_HORA_PX;
+
+  return { top: `${top}px`, height: `${height}px` };
+};
+
+// --- Componentes Memoizados ---
+
+/**
+ * Componente de Cita Individual
+ * Usamos React.memo para evitar que se re-renderice si la 'cita' no ha cambiado.
+ */
+const CitaComponent = memo(({ cita }: { cita: Cita }) => {
+  const { top, height } = calcularPosicionBloque(cita.horaInicio, cita.horaFin);
+  const duracion = horaAMinutos(cita.horaFin) - horaAMinutos(cita.horaInicio);
+
+  return (
+    <div
+      className="absolute left-1 right-1 z-10 p-2 rounded-lg shadow-md overflow-hidden bg-indigo-100 border border-indigo-300"
+      style={{ top, height }}
+      title={`Cita con ${cita.pacienteNombre} ${cita.pacienteApellido}`}
+    >
+      <p className="font-semibold text-xs text-indigo-800 truncate">
+        {cita.pacienteNombre} {cita.pacienteApellido}
+      </p>
+      {duracion > 30 && (
+        <div className="flex items-center text-xs text-indigo-600 mt-1">
+          <Clock className="w-3 h-3 mr-1" />
+          <span>{cita.horaInicio.substring(0, 5)} - {cita.horaFin.substring(0, 5)}</span>
+        </div>
+      )}
+      {cita.linkCita && duracion > 45 && (
+         <a 
+           href={cita.linkCita} 
+           target="_blank" 
+           rel="noopener noreferrer"
+           className="flex items-center text-xs text-blue-600 hover:underline mt-1"
+           onClick={(e) => e.stopPropagation()}
+         >
+           <Video className="w-3 h-3 mr-1" />
+           Unirse a la cita
+         </a>
+      )}
+    </div>
+  );
+});
+CitaComponent.displayName = 'CitaComponent'; // Para mejor debugging
+
+/**
+ * Componente de Columna de Día
+ * Memoizado para evitar re-renderizado si las citas y horarios del día no cambian.
+ */
+const DiaColumna = memo(({ citas, horarios }: { citas: Cita[], horarios: Horario[] }) => {
+  return (
+    <div className="relative col-span-1 border-l border-gray-200">
+      {/* 1. Líneas de fondo (MUCHO MÁS SIMPLE) */}
+      {HORAS_CALENDARIO.map(hora => (
+        <div 
+          key={hora} 
+          className="h-full border-t border-gray-200" 
+          style={{ height: `${ALTURA_HORA_PX}px` }}
+        ></div>
+      ))}
+
+      {/* 2. Bloques de Horario de Trabajo */}
+      {horarios.map((horario, index) => (
+        <div 
+          key={index}
+          className="absolute w-full bg-green-50 z-0"
+          style={calcularPosicionBloque(horario.horaInicio, horario.horaFin)}
+        ></div>
+      ))}
+      
+      {/* 3. Bloques de Citas */}
+      {citas.map(cita => (
+        <CitaComponent key={cita.idCita} cita={cita} />
+      ))}
+    </div>
+  );
+});
+DiaColumna.displayName = 'DiaColumna'; // Para mejor debugging
 
 // --- Componente Principal de la Agenda ---
 const AgendaDoctorPage = () => {
   const { user, role, loading: authLoading } = useAuth();
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(new Date("2025-11-10T10:00:00")); // Mock date
   const [agendaData, setAgendaData] = useState<AgendaData>({ citas: [], horario: [] });
   const [loading, setLoading] = useState(true);
-  
   const [error, setError] = useState<string | null>(null);
 
-  // Derivar estado de la fecha actual
   const inicioSemana = useMemo(() => getInicioSemana(currentDate), [currentDate]);
   const diasSemana = useMemo(() => getDiasDeLaSemana(inicioSemana), [inicioSemana]);
-  const hoy = new Date();
+  const hoy = useMemo(() => new Date(), []); // Solo se calcula una vez
 
   // --- Carga de Datos ---
   useEffect(() => {
@@ -115,18 +195,14 @@ const AgendaDoctorPage = () => {
     const fetchAgenda = async () => {
       setLoading(true);
       setError(null);
-      
       const inicioSemanaISO = inicioSemana.toISOString().split('T')[0];
-
       try {
         const { data, error } = await supabase.rpc('get_doctor_agenda', {
           p_doctor_id: user.id,
           p_start_date: inicioSemanaISO,
         });
-
         if (error) throw error;
         setAgendaData(data as AgendaData);
-
       } catch (err: any) {
         console.error("Error al cargar la agenda:", err);
         setError(err.message || "No se pudo cargar la agenda.");
@@ -138,7 +214,39 @@ const AgendaDoctorPage = () => {
     fetchAgenda();
   }, [user, role, authLoading, inicioSemana]);
 
-  // --- Manejadores de Eventos ---
+  // --- OPTIMIZACIÓN: Pre-cálculo de citas y horarios ---
+  // Esto transforma la lista de citas en un Map para acceso O(1)
+  const citasPorDia = useMemo(() => {
+    const map = new Map<string, Cita[]>();
+    // Inicializar el map para todos los días de la semana
+    for (const dia of diasSemana) {
+      map.set(dia.toISOString().split('T')[0], []);
+    }
+    // Llenar el map con las citas
+    for (const cita of agendaData.citas) {
+      const citaFecha = new Date(cita.fecha).toISOString().split('T')[0];
+      map.get(citaFecha)?.push(cita);
+    }
+    return map;
+  }, [agendaData.citas, diasSemana]);
+
+  // Esto transforma la lista de horarios en un Map para acceso O(1)
+  const horarioPorDia = useMemo(() => {
+    const map = new Map<number, Horario[]>();
+    for (let i = 0; i < 7; i++) {
+      map.set(i, []); // 0 = Domingo, 1 = Lunes, etc.
+    }
+    for (const horario of agendaData.horario) {
+      const diaIndex = DIAS_SEMANA_MAP[horario.diaSemana.toLowerCase()];
+      if (diaIndex !== undefined) {
+        map.get(diaIndex)?.push(horario);
+      }
+    }
+    return map;
+  }, [agendaData.horario]);
+
+
+  // --- Manejadores de Eventos (rápidos, sin cambios) ---
   const irSemanaAnterior = () => {
     setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 7)));
   };
@@ -152,94 +260,19 @@ const AgendaDoctorPage = () => {
   };
 
   // --- Renderizado de Horas (Columna Izquierda) ---
-  const renderizarHoras = () => {
-    const horas = [];
-    for (let h = HORA_INICIO_CALENDARIO; h < HORA_FIN_CALENDARIO; h++) {
-      horas.push(
-        <div key={h} className="h-full flex justify-end items-start pt-1 pr-2" style={{ height: `${ALTURA_HORA_PX}px` }}>
-          <span className="text-xs text-gray-500 transform -translate-y-2">{h}:00</span>
-        </div>
-      );
-    }
-    return <div className="shrink-0">{horas}</div>;
-  };
-  
-  // --- Renderizado de Citas (Componente Interno) ---
-  const RenderizarCitasDelDia = ({ dia }: { dia: Date }) => {
-    const citasDelDia = agendaData.citas.filter(c => isMismoDia(new Date(c.fecha), dia));
-    const diaStr = dia.toLocaleDateString('es-ES', { weekday: 'long' }).toLowerCase();
-
-    // Encontrar el horario de trabajo para este día
-    const horarioTrabajo = agendaData.horario.find(h => 
-      DIAS_SEMANA_MAP[h.diaSemana.toLowerCase()] === dia.getDay()
-    );
-
+  const renderizarHoras = useMemo(() => {
     return (
-      <div className="relative h-full bg-gray-50 border-l border-gray-200">
-        {/* Opcional: Renderizar el fondo de horario de trabajo */}
-        {horarioTrabajo && (
-          <div 
-            className="absolute w-full bg-green-50 z-0"
-            style={calcularPosicionBloque(horarioTrabajo.horaInicio, horarioTrabajo.horaFin)}
-          ></div>
-        )}
-
-        {/* Renderizar Citas */}
-        {citasDelDia.map(cita => (
-          <CitaComponent key={cita.idCita} cita={cita} />
+      <div className="w-16 flex-shrink-0 border-r border-gray-200">
+        {/* Espacio vacío para la cabecera */}
+        <div className="h-[65px] sticky top-0 bg-white z-20"></div>
+        {HORAS_CALENDARIO.map(h => (
+          <div key={h} className="h-full flex justify-end items-start pt-1 pr-2" style={{ height: `${ALTURA_HORA_PX}px` }}>
+            <span className="text-xs text-gray-500 transform -translate-y-2">{h}:00</span>
+          </div>
         ))}
       </div>
     );
-  };
-  
-  /** Calcula el 'top' y 'height' de un bloque de cita */
-  const calcularPosicionBloque = (inicio: string, fin: string) => {
-    const minutosInicio = horaAMinutos(inicio);
-    const minutosFin = horaAMinutos(fin);
-    
-    const minutosOffsetCalendario = HORA_INICIO_CALENDARIO * 60;
-
-    const top = ((minutosInicio - minutosOffsetCalendario) / 60) * ALTURA_HORA_PX;
-    const height = ((minutosFin - minutosInicio) / 60) * ALTURA_HORA_PX;
-
-    return { top: `${top}px`, height: `${height}px` };
-  };
-
-  // --- Componente de Cita Individual ---
-  const CitaComponent = ({ cita }: { cita: Cita }) => {
-    const { top, height } = calcularPosicionBloque(cita.horaInicio, cita.horaFin);
-    const duracion = horaAMinutos(cita.horaFin) - horaAMinutos(cita.horaInicio);
-
-    return (
-      <div
-        className="absolute left-1 right-1 z-10 p-2 rounded-lg shadow-md overflow-hidden bg-indigo-100 border border-indigo-300"
-        style={{ top, height }}
-        title={`Cita con ${cita.pacienteNombre} ${cita.pacienteApellido}`}
-      >
-        <p className="font-semibold text-xs text-indigo-800 truncate">
-          {cita.pacienteNombre} {cita.pacienteApellido}
-        </p>
-        {duracion > 30 && (
-          <div className="flex items-center text-xs text-indigo-600 mt-1">
-            <Clock className="w-3 h-3 mr-1" />
-            <span>{cita.horaInicio.substring(0, 5)} - {cita.horaFin.substring(0, 5)}</span>
-          </div>
-        )}
-        {cita.linkCita && duracion > 45 && (
-           <a 
-             href={cita.linkCita} 
-             target="_blank" 
-             rel="noopener noreferrer"
-             className="flex items-center text-xs text-blue-600 hover:underline mt-1"
-             onClick={(e) => e.stopPropagation()}
-           >
-             <Video className="w-3 h-3 mr-1" />
-             Unirse a la cita
-           </a>
-        )}
-      </div>
-    );
-  };
+  }, []); // Este componente nunca cambia, así que lo memoizamos
 
   // --- Renderizado Principal ---
   if (authLoading) {
@@ -250,7 +283,6 @@ const AgendaDoctorPage = () => {
     );
   }
 
-  // Asumimos que tienes un Navbar para el rol 'doctor'
   const navLinksDoctor = [
     { name: 'Mi Agenda', href: '/doctor/agenda', icon: Calendar },
     { name: 'Pacientes', href: '/doctor/pacientes', icon: Users },
@@ -261,20 +293,14 @@ const AgendaDoctorPage = () => {
       <Navbar navLinks={navLinksDoctor} principal="/doctor" />
       
       <main className="flex-1 p-4 md:p-6 overflow-hidden flex flex-col">
-        {/* --- Cabecera de Navegación --- */}
+        {/* Cabecera de Navegación */}
         <div className="flex items-center justify-between mb-4 px-2">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold text-gray-800">Mi Agenda</h1>
-            <button onClick={irHoy} className="text-sm rounded-md px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-50">
-              Hoy
-            </button>
+            <button onClick={irHoy} className="text-sm rounded-md px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-50">Hoy</button>
             <div className="flex items-center rounded-md border border-gray-300">
-              <button onClick={irSemanaAnterior} className="p-1.5 hover:bg-gray-50 rounded-l-md">
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
-              </button>
-              <button onClick={irSemanaSiguiente} className="p-1.5 hover:bg-gray-50 rounded-r-md border-l border-gray-300">
-                <ChevronRight className="w-5 h-5 text-gray-600" />
-              </button>
+              <button onClick={irSemanaAnterior} className="p-1.5 hover:bg-gray-50 rounded-l-md"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
+              <button onClick={irSemanaSiguiente} className="p-1.5 hover:bg-gray-50 rounded-r-md border-l border-gray-300"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
             </div>
           </div>
           <h2 className="text-lg font-semibold text-indigo-600">
@@ -284,82 +310,65 @@ const AgendaDoctorPage = () => {
 
         {error && (
           <div className="flex items-center gap-3 p-4 rounded-md bg-red-100 text-red-700">
-            <AlertCircle className="h-5 w-5" />
+            <AlertCircle className="h-5 h-5" />
             <p>{error}</p>
           </div>
         )}
 
         {/* --- Contenedor del Calendario (Scrollable) --- */}
         <div className="flex-1 overflow-auto bg-white rounded-lg shadow-md border border-gray-200">
-          <div className="flex flex-col" style={{ minWidth: '800px' }}>
-            {/* --- Cabecera de Días --- */}
-<div className="flex sticky top-0 bg-white z-20 shadow-sm">
-  {/* Esquina vacía (misma anchura que la columna de horas) */}
-  <div className="w-16 flex-shrink-0 border-r border-gray-200"></div>
+          
+          {loading ? (
+            <div className="flex justify-center items-center h-full min-h-[500px]">
+              <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+            </div>
+          ) : (
+            <div className="flex" style={{ minWidth: '800px' }}>
+              
+              {/* Columna de Horas (Sticky a la izquierda) */}
+              {renderizarHoras}
 
-  {/* Grid de 7 columnas para los días */}
-  <div className="flex-1">
-    <div className="grid grid-cols-7">
-      {diasSemana.map(dia => {
-        const { dia: diaStr, num } = formatCabeceraDia(dia);
-        const esHoy = isMismoDia(dia, hoy);
-        return (
-          <div
-            key={dia.toISOString()}
-            className="col-span-1 flex items-center justify-center gap-2 py-2 border-l border-gray-200"
-          >
-            {/* Día en horizontal con la fecha al lado */}
-            <span className="text-xs font-medium text-gray-500 uppercase">{diaStr}</span>
-            <span
-              className={`text-2xl font-bold inline-flex items-center justify-center ${
-                esHoy
-                  ? 'text-white bg-indigo-600 rounded-full w-8 h-8'
-                  : 'text-gray-700'
-              }`}
-            >
-              {num}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-</div>
+              {/* Contenedor Principal de Días (Scrollable horizontalmente) */}
+              <div className="flex-1 flex flex-col">
+                
+                {/* Cabecera de Días (Sticky arriba) */}
+                <div className="flex sticky top-0 bg-white z-10 shadow-sm">
+                  <div className="grid grid-cols-7 flex-1">
+                    {diasSemana.map(dia => {
+                      const { dia: diaStr, num } = formatCabeceraDia(dia);
+                      const esHoy = isMismoDia(dia, hoy);
+                      return (
+                        <div key={dia.toISOString()} className="col-span-1 flex flex-col items-center justify-center py-2">
+                          <span className="text-xs font-medium text-gray-500">{diaStr}</span>
+                          <span className={`text-2xl font-bold mt-1 ${esHoy ? 'text-white bg-indigo-600 rounded-full w-9 h-9 flex items-center justify-center' : 'text-gray-700'}`}>
+                            {num}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                
+                {/* Cuerpo del Calendario (Grid de días) */}
+                <div className="grid grid-cols-7 flex-1">
+                  {diasSemana.map(dia => {
+                    const isoDate = dia.toISOString().split('T')[0];
+                    const diaIndex = dia.getDay();
+                    return (
+                      <DiaColumna
+                        key={isoDate}
+                        citas={citasPorDia.get(isoDate) || []}
+                        horarios={horarioPorDia.get(diaIndex) || []}
+                      />
+                    );
+                  })}
+                </div>
 
-{/* --- Cuerpo del Calendario --- */}
-<div className="flex relative">
-  {/* Columna de Horas (misma w-16 que la esquina vacía) */}
-  <div className="w-16 flex-shrink-0 border-r border-gray-200">
-    {renderizarHoras()}
-  </div>
+              </div>
+            </div>
+          )}
 
-  {/* Columnas de Días y Citas: usar grid con 7 columnas para alinear con la cabecera */}
-  <div className="grid grid-cols-7 flex-1 relative">
-    {/* Líneas de fondo de hora */}
-    {Array.from({ length: HORA_FIN_CALENDARIO - HORA_INICIO_CALENDARIO }).map((_, i) => (
-      <div
-        key={i}
-        className="col-span-7 grid grid-cols-7 border-t border-gray-200"
-        style={{ height: `${ALTURA_HORA_PX}px` }}
-      >
-        {Array.from({ length: 7 }).map((_, j) => (
-          <div key={j} className={j > 0 ? "border-l border-gray-200" : ""}></div>
-        ))}
-      </div>
-    ))}
-
-    {/* Capa de Eventos (superpuesta) */}
-    <div className="absolute inset-0 grid grid-cols-7">
-      {diasSemana.map(dia => (
-        <RenderizarCitasDelDia key={dia.toISOString()} dia={dia} />
-      ))}
-    </div>
-  </div>
-</div>
-
-          </div>
         </div>
-
       </main>
     </div>
   );
