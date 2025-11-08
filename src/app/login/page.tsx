@@ -87,7 +87,7 @@ const Page = () => {
       {/* Contenedor principal centrado */}
       {/* flex-grow toma el espacio restante */}
       {/* items-center y justify-center centran la tarjeta en ESE espacio */}
-      <div className="flex-grow flex items-center justify-center p-4">
+      <div className="grow flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border border-gray-100">
           
           <div className="text-center mb-8">

@@ -15,6 +15,7 @@ import {
   Loader2       // Icono de Carga
 } from 'lucide-react';
 import { useState } from "react";
+import { redirect } from "next/navigation";
 
 interface NavLink {
   name: string;
@@ -58,7 +59,7 @@ const Navbar = ({ navLinks, principal }: NavbarProps) => {
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
             className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-indigo-500 focus:outline-none focus:bg-indigo-500 transition-colors"
           >
-            <UserCircle className="w-10 h-10 flex-shrink-0" />
+            <UserCircle className="w-10 h-10 shrink-0" />
             <div className="truncate min-w-0">
               <p className="font-semibold text-sm truncate">{user.email}</p>
               <p className="text-xs text-indigo-100 capitalize">{role || 'Usuario'}</p>
@@ -76,6 +77,7 @@ const Navbar = ({ navLinks, principal }: NavbarProps) => {
               <button
                 onClick={() => {
                   handleOut(); // Ejecuta el logout
+                  redirect('/login');
                   setIsUserMenuOpen(false); // Cierra el menú
                 }}
                 className="w-full text-left flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-gray-100 transition-colors"

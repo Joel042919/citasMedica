@@ -1,8 +1,8 @@
 "use client";
-import Navbar from '@/app/components/Navbar';
 import React, { useState, useEffect, FormEvent } from 'react';
-import { supabase } from "../../../../lib/supabaseClient"; // Ajusta esta ruta
-import { useAuth } from "../../../context/AuthContext"; // Ajusta esta ruta
+import Navbar from '@/app/components/Navbar';
+import { supabase } from "../../../../lib/supabaseClient";
+import { useAuth } from "../../../context/AuthContext";
 
 import {
   Users,
@@ -18,26 +18,16 @@ import {
   Loader2,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  BriefcaseMedical
 } from 'lucide-react';
 
-// --- Constantes ---
-const navLinks = [
-  { name: 'Usuarios', href: '/admin/usuarios', icon: Users },
-  { name: 'Médicos', href: '/admin/medicos', icon: Stethoscope },
-  { name: 'Citas Médicas', href: '/admin/citas', icon: Calendar },
-  { name: 'Reportes', href: '/admin/reportes', icon: FileText },
-];
-
-// Roles que este formulario puede crear/editar
-const ROLES_DISPONIBLES = ['paciente', 'admin', 'recepcion'];
-const SEXO_OPCIONES = [
-  { value: 'M', label: 'Masculino' },
-  { value: 'F', label: 'Femenino' },
-  { value: 'O', label: 'Otro' },
-];
-
 // --- Tipos (Ayuda para TypeScript, opcional pero recomendado) ---
+type Especialidad = {
+  idEspecialidad: number;
+  especialidad: string;
+};
+
 type Usuario = {
   id: string;
   nombres: string;
@@ -45,89 +35,156 @@ type Usuario = {
   email: string;
   rol: 'paciente' | 'admin' | 'recepcion' | 'doctor';
   is_active: boolean;
-  telefono: string;
-  fechaNacimiento: string;
-  sexo: string;
+  telefono: string | null;
+  fechaNacimiento: string | null;
+  sexo: string | null;
   banned_until: string | null;
+  idespecialidad: number | null;
+  especialidad: string | null;
 };
+
+// Tipos para el Navbar
+type NavLink = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className: string }>; // Icono de Lucide
+};
+
+// --- Constantes ---
+const navLinks: NavLink[] = [
+  { name: 'Usuarios', href: '/admin/usuarios', icon: Users },
+  { name: 'Médicos', href: '/admin/medicos', icon: Stethoscope },
+  { name: 'Citas Médicas', href: '/admin/citas', icon: Calendar },
+  { name: 'Reportes', href: '/admin/reportes', icon: FileText },
+];
+
+// Roles que este formulario puede crear/editar
+const ROLES_DISPONIBLES: Array<'paciente' | 'admin' | 'recepcion'> = ['paciente', 'admin', 'recepcion'];
+const SEXO_OPCIONES = [
+  { value: 'M', label: 'Masculino' },
+  { value: 'F', label: 'Femenino' },
+  { value: 'O', label: 'Otro' },
+];
 
 type ModalState = {
   type: 'create' | 'edit' | 'delete' | 'reactivate';
   user: Usuario | null;
 } | null;
 
+// Tipo para la respuesta de Supabase (simplificado)
+type SupabaseResponse<T> = {
+  data: T[] | null;
+  error: { message: string } | null;
+};
+
+type SupabaseRpcResponse = {
+  data: any | null;
+  error: { message: string } | null;
+};
+
+
 // --- Componente Principal ---
 const UsuariosPage = () => {
   const { role } = useAuth();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [especialidades, setEspecialidades] = useState<Especialidad[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
 
-  // Cargar usuarios al inicio
+  // Cargar datos iniciales
   useEffect(() => {
     if (role === 'admin') {
-      fetchUsuarios();
+      fetchData();
     }
   }, [role]);
 
   // --- Funciones de Datos ---
-  const fetchUsuarios = async () => {
+  const fetchData = async () => {
     setLoading(true);
     setError(null);
-    
-    // Usamos la VISTA que creamos en el SQL
-    const { data, error } = await supabase
-      .from('vista_usuarios_admin')
-      .select('*')
-      .order('apellidos', { ascending: true });
+    try {
+      // Usamos la VISTA que creamos en el SQL
+      const usuariosPromise = supabase
+        .from('vista_usuarios_admin')
+        .select('*')
+        .order('apellidos', { ascending: true });
+        
+      // Cargamos las especialidades para el dropdown de edición
+      const especialidadesPromise = supabase
+        .from('especialidad')
+        .select('*')
+        .order('especialidad', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching usuarios:', error);
-      setError('Error al cargar usuarios: ' + error.message);
-    } else {
-      setUsuarios(data as Usuario[]);
+      // Tipamos explícitamente la respuesta de Promise.all
+      const [usuariosRes, especialidadesRes] = await Promise.all([
+        usuariosPromise as unknown as Promise<SupabaseResponse<Usuario>>,
+        especialidadesPromise as unknown as Promise<SupabaseResponse<Especialidad>>
+      ]);
+
+      if (usuariosRes.error) throw usuariosRes.error;
+      if (especialidadesRes.error) throw especialidadesRes.error;
+
+      setUsuarios(usuariosRes.data || []);
+      setEspecialidades(especialidadesRes.data || []);
+      
+    } catch (err: unknown) {
+      console.error('Error fetching data:', err);
+      if (err instanceof Error) {
+        setError('Error al cargar datos: ' + err.message);
+      } else {
+        setError('Un error desconocido ocurrió al cargar datos.');
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   // --- Manejadores de Acciones ---
 
-  const handleCrearUsuario = async (formData: any) => {
+  const handleCrearUsuario = async (formData: Record<string, any>) => {
     const { data, error } = await supabase.rpc('admin_crear_usuario', {
       p_email: formData.email,
       p_password: formData.password,
       p_nombres: formData.nombres,
       p_apellidos: formData.apellidos,
       p_rol: formData.rol,
-      p_telefono: formData.telefono,
-      p_fecha_nacimiento: formData.fechaNacimiento,
-      p_sexo: formData.sexo
-    });
-
+      p_telefono: formData.telefono || null,
+      p_fecha_nacimiento: formData.fechaNacimiento || null,
+      p_sexo: formData.sexo || null
+    }) as SupabaseRpcResponse;
     if (error) throw error;
     return data;
   };
-
-  const handleActualizarRol = async (userId: string, nuevoRol: string) => {
-    const { error } = await supabase.rpc('admin_actualizar_rol_usuario', {
+  
+  const handleActualizarUsuario = async (userId: string, formData: Record<string, any>) => {
+    const { data, error } = await supabase.rpc('admin_actualizar_usuario', {
       p_user_id: userId,
-      p_nuevo_rol: nuevoRol
-    });
+      p_nombres: formData.nombres,
+      p_apellidos: formData.apellidos,
+      p_telefono: formData.telefono || null,
+      p_fecha_nacimiento: formData.fechaNacimiento || null,
+      p_sexo: formData.sexo || null,
+      p_rol: formData.rol,
+      p_email: formData.email,
+      p_password: formData.password || null, // Enviar null si está vacío
+      p_idespecialidad: formData.idespecialidad ? Number(formData.idespecialidad) : null
+    }) as SupabaseRpcResponse;
     if (error) throw error;
+    return data;
   };
 
   const handleDesactivar = async (userId: string) => {
     const { error } = await supabase.rpc('admin_desactivar_usuario', {
       p_user_id: userId
-    });
+    }) as SupabaseRpcResponse;
     if (error) throw error;
   };
 
   const handleReactivar = async (userId: string) => {
     const { error } = await supabase.rpc('admin_reactivar_usuario', {
       p_user_id: userId
-    });
+    }) as SupabaseRpcResponse;
     if (error) throw error;
   };
 
@@ -184,9 +241,9 @@ const UsuariosPage = () => {
             {!loading && !error && (
               <UserTable
                 usuarios={usuarios}
-                onEdit={(user: any) => setModal({ type: 'edit', user })}
-                onDelete={(user: any) => setModal({ type: 'delete', user })}
-                onReactivate={(user: any) => setModal({ type: 'reactivate', user })}
+                onEdit={(user) => setModal({ type: 'edit', user })}
+                onDelete={(user) => setModal({ type: 'delete', user })}
+                onReactivate={(user) => setModal({ type: 'reactivate', user })}
               />
             )}
           </div>
@@ -197,23 +254,27 @@ const UsuariosPage = () => {
       {/* --- Modales --- */}
       {modal?.type === 'create' && (
         <UserFormModal
+          mode="create"
           onClose={() => setModal(null)}
           onSuccess={() => {
             setModal(null);
-            fetchUsuarios();
+            fetchData(); // Recargar toda la data
           }}
+          onCrearUsuario={handleCrearUsuario}
         />
       )}
-
+      
       {modal?.type === 'edit' && modal.user && (
-        <EditRoleModal
-          user={modal.user}
+        <UserFormModal
+          mode="edit"
+          existingUser={modal.user}
+          especialidades={especialidades}
           onClose={() => setModal(null)}
           onSuccess={() => {
             setModal(null);
-            fetchUsuarios();
+            fetchData(); // Recargar toda la data
           }}
-          onUpdateRole={handleActualizarRol}
+          onActualizarUsuario={handleActualizarUsuario}
         />
       )}
 
@@ -228,7 +289,7 @@ const UsuariosPage = () => {
           onClose={() => setModal(null)}
           onSuccess={() => {
             setModal(null);
-            fetchUsuarios();
+            fetchData();
           }}
           onAction={handleDesactivar}
         />
@@ -245,7 +306,7 @@ const UsuariosPage = () => {
           onClose={() => setModal(null)}
           onSuccess={() => {
             setModal(null);
-            fetchUsuarios();
+            fetchData();
           }}
           onAction={handleReactivar}
         />
@@ -256,7 +317,14 @@ const UsuariosPage = () => {
 };
 
 // --- Sub-Componente: Tabla de Usuarios ---
-const UserTable = ({ usuarios, onEdit, onDelete, onReactivate }: any) => {
+interface UserTableProps {
+  usuarios: Usuario[];
+  onEdit: (user: Usuario) => void;
+  onDelete: (user: Usuario) => void;
+  onReactivate: (user: Usuario) => void;
+}
+
+const UserTable = ({ usuarios, onEdit, onDelete, onReactivate }: UserTableProps) => {
   return (
     <div className="overflow-x-auto border rounded-lg">
       <table className="min-w-full divide-y divide-gray-200">
@@ -281,10 +349,15 @@ const UserTable = ({ usuarios, onEdit, onDelete, onReactivate }: any) => {
               <tr key={user.id}>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900">{user.nombres} {user.apellidos}</div>
-                  <div className="text-sm text-gray-500">{user.telefono}</div>
+                  <div className="text-sm text-gray-500">{user.telefono || 'Sin teléfono'}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{user.email}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 capitalize">{user.rol}</td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-700 capitalize">{user.rol}</div>
+                  {user.rol === 'doctor' && (
+                    <div className="text-sm text-gray-500">{user.especialidad || 'Sin especialidad'}</div>
+                  )}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {user.is_active ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -302,8 +375,7 @@ const UserTable = ({ usuarios, onEdit, onDelete, onReactivate }: any) => {
                   <button
                     onClick={() => onEdit(user)}
                     className="text-indigo-600 hover:text-indigo-900"
-                    title="Editar Rol"
-                    disabled={user.rol === 'doctor'} // No permitir editar rol de doctor
+                    title="Editar Usuario"
                   >
                     <Edit className="w-5 h-5" />
                   </button>
@@ -334,18 +406,41 @@ const UserTable = ({ usuarios, onEdit, onDelete, onReactivate }: any) => {
   );
 };
 
-// --- Sub-Componente: Modal Formulario de Usuario (Crear) ---
-const UserFormModal = ({ onClose, onSuccess }: any) => {
+// --- Sub-Componente: Modal Formulario de Usuario (Unificado) ---
+interface UserFormModalProps {
+  mode: 'create' | 'edit';
+  onClose: () => void;
+  onSuccess: () => void;
+  existingUser?: Usuario | null; 
+  especialidades?: Especialidad[];
+  onCrearUsuario?: (formData: Record<string, any>) => Promise<any>;
+  onActualizarUsuario?: (userId: string, formData: Record<string, any>) => Promise<any>;
+}
+
+const UserFormModal = ({ 
+  mode, 
+  onClose, 
+  onSuccess, 
+  existingUser = null, 
+  especialidades = [],
+  onCrearUsuario,
+  onActualizarUsuario
+}: UserFormModalProps) => {
+  
+  const isEditMode = mode === 'edit';
+  
   const [formData, setFormData] = useState({
-    nombres: '',
-    apellidos: '',
-    email: '',
-    password: '',
-    rol: 'paciente',
-    telefono: '',
-    fechaNacimiento: '',
-    sexo: 'M'
+    nombres: existingUser?.nombres || '',
+    apellidos: existingUser?.apellidos || '',
+    email: existingUser?.email || '',
+    password: '', // Siempre vacío por seguridad
+    rol: existingUser?.rol || 'paciente',
+    telefono: existingUser?.telefono || '',
+    fechaNacimiento: existingUser?.fechaNacimiento || '',
+    sexo: existingUser?.sexo || 'M',
+    idespecialidad: existingUser?.idespecialidad || ''
   });
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -360,20 +455,32 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
     setError(null);
 
     try {
-      await supabase.rpc('admin_crear_usuario', {
-        p_email: formData.email,
-        p_password: formData.password,
-        p_nombres: formData.nombres,
-        p_apellidos: formData.apellidos,
-        p_rol: formData.rol,
-        p_telefono: formData.telefono || null,
-        p_fecha_nacimiento: formData.fechaNacimiento || null,
-        p_sexo: formData.sexo || null
-      });
+      if (isEditMode) {
+        // --- Modo Edición ---
+        if (!existingUser || !onActualizarUsuario) throw new Error("No hay usuario o función para editar.");
+        await onActualizarUsuario(existingUser.id, formData);
+      } else {
+        // --- Modo Creación ---
+        if (!onCrearUsuario) throw new Error("No hay función para crear.");
+        await onCrearUsuario(formData);
+      }
       onSuccess();
-    } catch (err: any) {
+      
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.message || 'Error al crear el usuario.');
+      let errorMessage = `Error al ${isEditMode ? 'actualizar' : 'crear'} el usuario. Revise los datos.`;
+      if (err instanceof Error) {
+        if (err.message.includes('permission denied')) {
+          errorMessage = "Error de permisos.";
+        } else if (err.message.includes('Email ya existe')) {
+          errorMessage = "El email proporcionado ya está en uso.";
+        } else if (err.message.includes("password")) {
+           errorMessage = "La contraseña debe tener al menos 6 caracteres.";
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -382,14 +489,22 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
   // Clases de Tailwind para inputs (para reutilizar)
   const labelClass = "block text-sm font-medium text-gray-700";
   const inputClass = "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm";
+  const inputDisabledClass = "mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm sm:text-sm";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <div className="p-6">
-            <h3 className="text-xl font-semibold text-gray-900">Crear Nuevo Usuario</h3>
-            <p className="mt-1 text-sm text-gray-600">El usuario recibirá un email de confirmación (aunque lo activamos por defecto).</p>
+            <h3 className="text-xl font-semibold text-gray-900">
+              {isEditMode ? 'Editar Usuario' : 'Crear Nuevo Usuario'}
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">
+              {isEditMode 
+                ? `Editando el perfil de ${existingUser?.nombres} ${existingUser?.apellidos}.`
+                : 'El usuario se creará y activará inmediatamente.'
+              }
+            </p>
             
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Nombres */}
@@ -402,6 +517,11 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
                 <label htmlFor="apellidos" className={labelClass}>Apellidos</label>
                 <input type="text" name="apellidos" id="apellidos" value={formData.apellidos} onChange={handleChange} className={inputClass} required />
               </div>
+              
+              {/* --- Sección de Autenticación --- */}
+              <h4 className="md:col-span-2 text-sm font-semibold text-indigo-700 border-b border-indigo-200 pb-1 mt-2">
+                Datos de Acceso
+              </h4>
               {/* Email */}
               <div className="md:col-span-2">
                 <label htmlFor="email" className={labelClass}>Email</label>
@@ -409,7 +529,9 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
               </div>
               {/* Password */}
               <div className="md:col-span-2 relative">
-                <label htmlFor="password" className={labelClass}>Contraseña</label>
+                <label htmlFor="password" className={labelClass}>
+                  Contraseña {isEditMode ? '(Dejar en blanco para no cambiar)' : ''}
+                </label>
                 <input 
                   type={showPassword ? "text" : "password"} 
                   name="password" 
@@ -417,49 +539,100 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
                   value={formData.password} 
                   onChange={handleChange} 
                   className={inputClass} 
-                  required 
+                  required={!isEditMode} // Requerido solo en creación
+                  minLength={isEditMode && formData.password.length > 0 ? 6 : (isEditMode ? 0 : 6)} // Corregido: .length
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-8 text-gray-500 hover:text-gray-700"
+                  title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+
+              {/* --- Sección de Perfil --- */}
+              <h4 className="md:col-span-2 text-sm font-semibold text-indigo-700 border-b border-indigo-200 pb-1 mt-2">
+                Datos de Perfil
+              </h4>
               {/* Rol */}
               <div>
                 <label htmlFor="rol" className={labelClass}>Rol</label>
-                <select name="rol" id="rol" value={formData.rol} onChange={handleChange} className={inputClass} required>
-                  {ROLES_DISPONIBLES.map(r => (
-                    <option key={r} value={r} className="capitalize">{r}</option>
-                  ))}
+                <select 
+                  name="rol" 
+                  id="rol" 
+                  value={formData.rol} 
+                  onChange={handleChange} 
+                  className={existingUser?.rol === 'doctor' ? inputDisabledClass : inputClass} 
+                  required
+                  disabled={existingUser?.rol === 'doctor'} // No permitir cambiar el rol de un doctor
+                >
+                  {/* Si es doctor, solo mostrar 'doctor'. Si no, mostrar los roles disponibles */}
+                  {existingUser?.rol === 'doctor' ? (
+                    <option value="doctor">Doctor</option>
+                  ) : (
+                    ROLES_DISPONIBLES.map(r => (
+                      <option key={r} value={r} className="capitalize">{r}</option>
+                    ))
+                  )}
                 </select>
               </div>
               {/* Teléfono */}
               <div>
                 <label htmlFor="telefono" className={labelClass}>Teléfono (9 dígitos)</label>
-                <input type="tel" name="telefono" id="telefono" value={formData.telefono} onChange={handleChange} className={inputClass} pattern="[0-9]{9}" />
+                <input type="tel" name="telefono" id="telefono" value={formData.telefono || ''} onChange={handleChange} className={inputClass} pattern="[0-9]{9}" title="Debe contener 9 dígitos numéricos"/>
               </div>
               {/* Fecha Nacimiento */}
               <div>
                 <label htmlFor="fechaNacimiento" className={labelClass}>Fecha de Nacimiento</label>
-                <input type="date" name="fechaNacimiento" id="fechaNacimiento" value={formData.fechaNacimiento} onChange={handleChange} className={inputClass} />
+                <input type="date" name="fechaNacimiento" id="fechaNacimiento" value={formData.fechaNacimiento || ''} onChange={handleChange} className={inputClass} />
               </div>
               {/* Sexo */}
               <div>
                 <label htmlFor="sexo" className={labelClass}>Sexo</label>
-                <select name="sexo" id="sexo" value={formData.sexo} onChange={handleChange} className={inputClass}>
+                <select name="sexo" id="sexo" value={formData.sexo || 'M'} onChange={handleChange} className={inputClass}>
                   {SEXO_OPCIONES.map(s => (
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
               </div>
+
+              {/* --- Sección de Doctor (Condicional) --- */}
+              {isEditMode && formData.rol === 'doctor' && (
+                <>
+                  <h4 className="md:col-span-2 text-sm font-semibold text-indigo-700 border-b border-indigo-200 pb-1 mt-2">
+                    <BriefcaseMedical className="w-4 h-4 inline-block mr-1" />
+                    Datos del Doctor
+                  </h4>
+                  <div className="md:col-span-2">
+                    <label htmlFor="idespecialidad" className={labelClass}>Especialidad</label>
+                    <select 
+                      name="idespecialidad" 
+                      id="idespecialidad" 
+                      value={formData.idespecialidad || ''} 
+                      onChange={handleChange} 
+                      className={inputClass}
+                    >
+                      <option value="">-- Seleccione una especialidad --</option>
+                      {especialidades.map((e: Especialidad) => (
+                        <option key={e.idEspecialidad} value={e.idEspecialidad}>
+                          {e.especialidad}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2 text-sm text-gray-600">
+                    La gestión de horarios se realiza desde el panel de "Médicos".
+                  </div>
+                </>
+              )}
+
             </div>
 
             {error && (
               <div className="mt-4 flex items-center gap-3 p-3 rounded-md bg-red-100 text-red-700">
-                <AlertCircle className="h-5 w-5" />
+                <AlertCircle className="h-5 h-5" />
                 <p className="text-sm">{error}</p>
               </div>
             )}
@@ -471,7 +644,7 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
               Cancelar
             </button>
             <button type="submit" disabled={loading} className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-300">
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Crear Usuario'}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isEditMode ? 'Guardar Cambios' : 'Crear Usuario')}
             </button>
           </div>
         </form>
@@ -480,80 +653,21 @@ const UserFormModal = ({ onClose, onSuccess }: any) => {
   );
 };
 
-// --- Sub-Componente: Modal Editar Rol ---
-const EditRoleModal = ({ user, onClose, onSuccess, onUpdateRole }: any) => {
-  const [nuevoRol, setNuevoRol] = useState(user.rol);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (nuevoRol === user.rol) {
-      onClose();
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      await onUpdateRole(user.id, nuevoRol);
-      onSuccess();
-    } catch (err: any) {
-      setError(err.message || 'Error al actualizar el rol.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <form onSubmit={handleSubmit}>
-          <div className="p-6">
-            <h3 className="text-xl font-semibold text-gray-900">Editar Rol</h3>
-            <p className="mt-2 text-sm text-gray-600">
-              Cambiando el rol para <span className="font-medium">{user.nombres} {user.apellidos}</span>.
-            </p>
-            
-            <div className="mt-4">
-              <label htmlFor="rol" className="block text-sm font-medium text-gray-700">Rol</label>
-              <select 
-                name="rol" 
-                id="rol" 
-                value={nuevoRol} 
-                onChange={(e) => setNuevoRol(e.target.value)} 
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" 
-                required
-              >
-                {ROLES_DISPONIBLES.map(r => (
-                  <option key={r} value={r} className="capitalize">{r}</option>
-                ))}
-              </select>
-            </div>
-
-            {error && (
-              <div className="mt-4 flex items-center gap-3 p-3 rounded-md bg-red-100 text-red-700">
-                <AlertCircle className="h-5 w-5" />
-                <p className="text-sm">{error}</p>
-              </div>
-            )}
-          </div>
-          
-          <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
-              Cancelar
-            </button>
-            <button type="submit" disabled={loading} className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-300">
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Guardar Cambios'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
 
 // --- Sub-Componente: Modal de Confirmación Genérico (Desactivar/Reactivar) ---
-const ConfirmActionModal = ({ user, action, title, message, Icon, color, onClose, onSuccess, onAction }: any) => {
+interface ConfirmActionModalProps {
+  user: Usuario;
+  action: string;
+  title: string;
+  message: string;
+  Icon: React.ComponentType<{ className: string }>;
+  color: 'red' | 'green';
+  onClose: () => void;
+  onSuccess: () => void;
+  onAction: (userId: string) => Promise<any>;
+}
+
+const ConfirmActionModal = ({ user, action, title, message, Icon, color, onClose, onSuccess, onAction }: ConfirmActionModalProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -563,22 +677,45 @@ const ConfirmActionModal = ({ user, action, title, message, Icon, color, onClose
     try {
       await onAction(user.id);
       onSuccess();
-    } catch (err: any) {
-      setError(err.message || `Error al ${action} el usuario.`);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message || `Error al ${action} el usuario.`);
+      } else {
+        setError(`Error desconocido al ${action} el usuario.`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const buttonClass = `inline-flex w-full justify-center rounded-md border border-transparent bg-${color}-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-${color}-700 disabled:bg-${color}-300 sm:ml-3 sm:w-auto sm:text-sm`;
+  // Clases dinámicas de Tailwind
+  const colorClasses = {
+    red: {
+      bg: 'bg-red-600',
+      hover: 'hover:bg-red-700',
+      disabled: 'disabled:bg-red-300',
+      iconBg: 'bg-red-100',
+      iconText: 'text-red-600',
+    },
+    green: {
+      bg: 'bg-green-600',
+      hover: 'hover:bg-green-700',
+      disabled: 'disabled:bg-green-300',
+      iconBg: 'bg-green-100',
+      iconText: 'text-green-600',
+    }
+  };
+  const theme = colorClasses[color] || colorClasses.red;
+
+  const buttonClass = `inline-flex w-full justify-center rounded-md border border-transparent ${theme.bg} px-4 py-2 text-base font-medium text-white shadow-sm ${theme.hover} ${theme.disabled} sm:ml-3 sm:w-auto sm:text-sm`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
         <div className="p-6">
           <div className="sm:flex sm:items-start">
-            <div className={`mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-${color}-100 sm:mx-0 sm:h-10 sm:w-10`}>
-              <Icon className={`h-6 w-6 text-${color}-600`} aria-hidden="true" />
+            <div className={`mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full ${theme.iconBg} sm:mx-0 sm:h-10 sm:w-10`}>
+              <Icon className={`h-6 w-6 ${theme.iconText}`} aria-hidden="true" />
             </div>
             <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
               <h3 className="text-lg font-medium leading-6 text-gray-900">{title}</h3>
